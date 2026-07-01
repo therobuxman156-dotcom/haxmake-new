@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Haxmake – Football P2P</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="replayBanner">🎬 REPLAY</div>
+
+  <!-- MENU -->
+  <div id="menuScreen" class="screen active">
+    <h1>⚽ Haxmake</h1>
+    <p>Football en ligne, sans serveur — juste entre amis.</p>
+    <div id="authInfo" class="auth-row"></div>
+    <input type="text" id="hostName" placeholder="Ton pseudo" maxlength="16">
+    <div class="option-row">
+      <label>Joueurs :</label>
+      <select id="limitSelect"><option value="2" selected>2 (1v1)</option><option value="4">4 (2v2)</option><option value="6">6 (3v3)</option></select>
+      <label>Vitesse :</label>
+      <select id="speedSelect"><option value="slow">Lente</option><option value="normal" selected>Normale</option><option value="fast">Rapide</option><option value="ultra">ULTRA</option></select>
+    </div>
+    <div class="option-row">
+      <label>Mode :</label>
+      <select id="modeSelect"><option value="casual" selected>🎮 Occasionnel</option><option value="ranked">🏆 Classé</option></select>
+      <label>Pays :</label>
+      <select id="countrySelect"></select>
+    </div>
+    <div id="mmrCorner"></div>
+    <div class="menu-buttons">
+      <button id="btnHost" class="btn-primary">🎮 Créer une partie</button>
+      <button id="btnBrowser" class="btn-secondary">🌐 Liste des serveurs</button>
+      <button id="btnSolo" class="btn-secondary">🤖 Entraînement solo</button>
+      <button id="btnJoin" class="btn-secondary">🔑 Rejoindre (code)</button>
+    </div>
+    <div class="controls-hint">Flèches / WASD : se déplacer · X / Espace : tirer</div>
+  </div>
+
+  <!-- JOIN -->
+  <div id="joinScreen" class="screen">
+    <h2>🔑 Rejoindre une partie</h2>
+    <input type="text" id="joinName" placeholder="Ton pseudo" maxlength="16">
+    <input type="text" id="roomInput" placeholder="Code de la partie (4 lettres)" maxlength="4">
+    <p id="joinStatus"></p>
+    <button id="btnDoJoin" class="btn-success">Rejoindre</button>
+    <button id="btnBackJoin" class="btn-small btn-secondary">Retour</button>
+  </div>
+
+  <!-- BROWSER -->
+  <div id="browserScreen" class="screen">
+    <h2>🌐 Parties disponibles</h2>
+    <div id="browserList"></div>
+    <div class="menu-buttons">
+      <button id="btnRefreshBrowser" class="btn-primary">🔄 Actualiser</button>
+      <button id="btnToggleCodes" class="btn-secondary">👁 Afficher/Masquer codes</button>
+      <button id="btnBackBrowser" class="btn-small btn-secondary">Retour</button>
+    </div>
+  </div>
+
+  <!-- LOBBY -->
+  <div id="lobbyScreen" class="screen">
+    <h2 id="lobbyTitle">Lobby</h2>
+    <div id="roomCodeDisplay">----</div>
+    <div id="shareUrl"></div>
+    <div id="playerCounter"></div>
+    <div id="hostLimitInfo"></div>
+    <div id="lobbyPlayers"></div>
+    <button id="btnStart" class="btn-success" style="display:none">Démarrer la partie</button>
+    <button id="btnLeaveLobby" class="btn-danger btn-small">Quitter</button>
+  </div>
+
+  <!-- GAME -->
+  <div id="gameScreen" class="screen">
+    <canvas id="gameCanvas"></canvas>
+    <div id="inGamePlayerList"></div>
+    <button id="btnQuitMatch" class="btn-danger btn-small btn-quit-game">🚪 Quitter</button>
+    <div id="performanceWarning" style="display:none;"></div>
+  </div>
+
+  <!-- GAME OVER -->
+  <div id="gameOverScreen" class="screen">
+    <h2 id="winnerText">Rouge gagne !</h2>
+    <div id="finalScore">0 - 0</div>
+    <div id="mmrChange"></div>
+    <button id="btnPlayAgain" class="btn-primary">Rejouer</button>
+    <button id="btnBackMenu" class="btn-secondary btn-small">Menu</button>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/physics.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

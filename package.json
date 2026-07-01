@@ -1,0 +1,11 @@
+{
+  "name": "haxmake",
+  "version": "1.0.0",
+  "description": "Haxball-like football game, P2P multiplayer via WebRTC – no server needed",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["haxball", "football", "p2p", "webrtc", "multiplayer"],
+  "license": "MIT"
+}

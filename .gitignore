@@ -1,0 +1,17 @@
+# Dépendances
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Config Firebase (CLÉS SECRETES - ne jamais committer)
+# Chaque développeur doit créer son propre js/firebase-config.js
+js/firebase-config.js
+
+# OS / éditeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
