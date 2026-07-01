@@ -23,6 +23,13 @@ const Net = (() => {
   function totalPlayers() { return 1 + connections.length; }
 
   // ── HOST ──
+  function updateFirestorePlayerCount() {
+    const db = firestoreDB();
+    if (db && roomCode && role === 'host') {
+      db.collection('lobbies').doc(roomCode).update({ players: totalPlayers() }).catch(() => {});
+    }
+  }
+
   function hostRoom(limit, hostName, mode) {
     playerLimit = limit || CFG.DEFAULT_LIMIT;
     gameMode = mode || CFG.MODE_CASUAL;
@@ -40,6 +47,7 @@ const Net = (() => {
           connections.push(conn);
           conn._playerName='Joueur'; conn._playerCountry='FR'; conn._playerInput={u:0,d:0,l:0,r:0,k:0};
           lobbyPlayers.push({id:conn.peer, name:conn._playerName, country:conn._playerCountry, team: totalPlayers()%2===1?CFG.TEAM_RED:CFG.TEAM_BLUE});
+          updateFirestorePlayerCount();
           if (onPlayerJoined) onPlayerJoined(conn.peer, conn._playerName);
           broadcastLobbyState();
         });
@@ -71,6 +79,7 @@ const Net = (() => {
 
     lobbyPlayers = lobbyPlayers.filter(p => p.id !== conn.peer);
     connections = connections.filter(c => c !== conn);
+    updateFirestorePlayerCount();
     if (onPlayerLeft) onPlayerLeft(conn.peer);
 
     // Immediate forfeit win during a live game (not replay)
@@ -225,8 +234,27 @@ const Net = (() => {
   function sendQuit() { if (hostConn&&hostConn.open) hostConn.send({type:'manualQuit'}); }
   function sendReplayDone() { if (hostConn&&hostConn.open) hostConn.send({type:'replayDone'}); }
 
-  // ── SERVER BROWSER ──
+  // ── SERVER BROWSER (Firestore global directory) ──
+  function firestoreDB() {
+    try { return firebase.firestore(); } catch(e) { return null; }
+  }
+
   function registerInBrowser(code, hostName, limit, speed, mode) {
+    // Write lobby to Firestore so anyone can discover it globally
+    const db = firestoreDB();
+    if (db) {
+      const ref = db.collection('lobbies').doc(code);
+      ref.set({
+        code, hostName, limit, speed, mode,
+        players: totalPlayers(),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      }).catch(() => {});
+      // Auto-cleanup after 10 minutes
+      setTimeout(() => {
+        ref.delete().catch(() => {});
+      }, 600000);
+    }
+    // Also keep a local PeerJS lobby for direct probing (fallback)
     try {
       lobbyPeer = new Peer(CFG.LOBBY_PREFIX+code, { debug:0, config:iceConfig });
       lobbyPeer._meta = { code, hostName, limit, speed, mode };
@@ -241,9 +269,64 @@ const Net = (() => {
     } catch(e) {}
   }
 
-  function unregisterFromBrowser() { if (lobbyPeer) { try{lobbyPeer.destroy();}catch(e){} lobbyPeer=null; } }
+  function unregisterFromBrowser() {
+    // Delete from Firestore
+    const db = firestoreDB();
+    if (db && roomCode) {
+      db.collection('lobbies').doc(roomCode).delete().catch(() => {});
+    }
+    if (lobbyPeer) { try{lobbyPeer.destroy();}catch(e){} lobbyPeer=null; }
+  }
 
   function browseRooms(callback) {
+    const db = firestoreDB();
+    if (db) {
+      // Query Firestore for recent lobbies (last 10 minutes)
+      // Use a simple query without composite index requirement
+      db.collection('lobbies')
+        .limit(30)
+        .get()
+        .then(snapshot => {
+          const now = Date.now();
+          const found = [];
+          snapshot.forEach(doc => {
+            const data = doc.data();
+            // Filter out stale entries (>10 min) client-side to avoid composite index
+            const createdAt = data.createdAt ? data.createdAt.toDate().getTime() : 0;
+            const age = createdAt ? (now - createdAt) : 999999;
+            if (age > 600000) {
+              // Clean up stale document
+              db.collection('lobbies').doc(doc.id).delete().catch(() => {});
+              return;
+            }
+            if (data.code && data.hostName) {
+              found.push({
+                code: data.code,
+                hostName: data.hostName,
+                limit: data.limit || CFG.DEFAULT_LIMIT,
+                speed: data.speed || 'normal',
+                mode: data.mode || CFG.MODE_CASUAL,
+                players: data.players || 1,
+                _createdAt: createdAt,
+              });
+            }
+          });
+          // Sort by most recent first
+          found.sort((a, b) => (b._createdAt||0) - (a._createdAt||0));
+          callback(found);
+        })
+        .catch(() => {
+          // Fallback to localStorage + PeerJS probe
+          browseRoomsLocal(callback);
+        });
+    } else {
+      // No Firestore — fallback to localStorage
+      browseRoomsLocal(callback);
+    }
+  }
+
+  // Legacy localStorage fallback
+  function browseRoomsLocal(callback) {
     const seen = JSON.parse(localStorage.getItem('haxmake_seen_rooms')||'[]');
     const now = Date.now();
     const valid = seen.filter(r => (now - r.t) < 300000);
