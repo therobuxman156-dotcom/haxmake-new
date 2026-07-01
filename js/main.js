@@ -98,7 +98,9 @@ const Main = (() => {
       $('hostName').value = Auth.name;
       if (Auth.country) { selectedCountry = Auth.country; const csel = $('countrySelect'); if (csel) csel.value = Auth.country; }
     } else {
-      info.innerHTML = Auth.isReady ? '<button id="btnSignIn" class="btn-small btn-primary">Se connecter avec Google</button>' : '<span style="font-size:11px;color:#7f8c8d">Firebase non configuré (js/firebase-config.js)</span>';
+      info.innerHTML = Auth.isReady 
+        ? '<button id="btnSignIn" class="btn-small btn-primary">Se connecter avec Google 🔑</button><br><span style="font-size:10px;color:#f39c12">⚠️ Vérifie que therobuxman156-dotcom.github.io est autorisé dans Firebase Console → Auth → Domaines</span>' 
+        : '<span style="font-size:11px;color:#7f8c8d">Firebase non configuré (js/firebase-config.js)</span>';
       const btn = $('btnSignIn'); if (btn) btn.onclick = () => Auth.signIn();
     }
     updateMMRDisplay();
