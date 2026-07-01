@@ -14,6 +14,7 @@ const Net = (() => {
   let inGame = false;
 
   let onPlayerJoined=null, onPlayerLeft=null, onRoomState=null, onGameStart=null, onGameState=null, onWinByDisconnect=null, onReplay=null, onAllReplayDone=null;
+  let replayChunks = []; // buffer for incoming replay chunks from host
 
   const iceConfig = { iceServers: [{ urls:'stun:stun.l.google.com:19302' }, { urls:'stun:stun1.l.google.com:19302' }] };
 
@@ -110,8 +111,12 @@ const Net = (() => {
     const allIds = ['host', ...connections.map(c => c.peer)];
     const allDone = allIds.every(id => playersReplayDone[id]);
     if (allDone && allIds.length > 0) {
-      for (const c of connections) try { c.send({type:'allReplayDone'}); } catch(e) {}
-      if (onAllReplayDone) onAllReplayDone();
+      // Only trigger game-over flow if the match is truly finished (max score reached)
+      // Otherwise, just notify everyone that replay is done and resume play
+      const gameIsOver = Game && Game.isGameOver();
+      const payload = { type: 'allReplayDone', gameOver: gameIsOver, winner: gameIsOver ? Game.winner : -1 };
+      for (const c of connections) try { c.send(payload); } catch(e) {}
+      if (onAllReplayDone && gameIsOver) onAllReplayDone();
       playersReplayDone = {};
     }
   }
@@ -148,7 +153,22 @@ const Net = (() => {
     }
   }
 
-  function sendReplay(frames) { for (const c of connections) try { c.send({type:'replay',frames}); } catch(e) {} }
+  function sendReplay(frames) {
+    // Send replay in chunks to avoid overwhelming the WebRTC DataChannel
+    const CHUNK_SIZE = 30; // frames per chunk
+    const CHUNK_DELAY = 80; // ms between chunks
+    const totalChunks = Math.ceil(frames.length / CHUNK_SIZE);
+    for (let i = 0; i < totalChunks; i++) {
+      const chunk = frames.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+      const isLast = i === totalChunks - 1;
+      setTimeout(() => {
+        for (const c of connections) {
+          if (!c.open) continue;
+          try { c.send({type:'replayChunk', chunk, index: i, total: totalChunks, isLast}); } catch(e) {}
+        }
+      }, i * CHUNK_DELAY);
+    }
+  }
 
   // ── CLIENT ──
   function joinRoom(code, name, country) {
@@ -165,6 +185,19 @@ const Net = (() => {
           else if (data.type==='state' && onGameState) onGameState(data.state);
           else if (data.type==='winByDisconnect' && onWinByDisconnect) onWinByDisconnect(data.winner);
           else if (data.type==='replay' && onReplay) onReplay(data.frames);
+          else if (data.type==='replayChunk') {
+            // Assemble replay chunks from host
+            if (!replayChunks) replayChunks = [];
+            replayChunks[data.index] = data.chunk;
+            if (data.isLast) {
+              const allFrames = [];
+              for (let j = 0; j <= data.index; j++) {
+                if (replayChunks[j]) allFrames.push(...replayChunks[j]);
+              }
+              replayChunks = [];
+              if (onReplay && allFrames.length > 0) onReplay(allFrames);
+            }
+          }
           else if (data.type==='allReplayDone' && onAllReplayDone) onAllReplayDone();
         });
         hostConn.on('close', () => {

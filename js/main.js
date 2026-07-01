@@ -225,7 +225,7 @@ const Main = (() => {
       };
       Net.onWinByDisconnect=(w)=>{ Game.stopReplay(); Game.winner=w; Game.running=false; onGameOver(); };
       Net.onReplay=(frames)=>{ playReplay(frames); };
-      Net.onAllReplayDone=()=>{ onGameOver(); };
+      Net.onAllReplayDone=()=>{ if (Game.isGameOver()) onGameOver(); };
     } catch(e) { $('joinStatus').textContent=e.message; $('joinStatus').className='error'; }
   }
 
@@ -286,6 +286,7 @@ const Main = (() => {
 
   // ── REPLAY ──
   function playReplay(frames) {
+    Game.stopReplay(); // Stop any previous replay before starting new one
     Game.startReplay(frames, () => {
       const banner = $('replayBanner');
       if (banner) banner.style.display='none';
@@ -329,7 +330,8 @@ const Main = (() => {
     if (Auth.isLoggedIn) await Auth.applyResult(won, isRanked);
     setTimeout(() => {
       phase='gameover'; showScreen('gameOverScreen');
-      $('winnerText').textContent = CFG.TEAM_NAMES[Game.winner]+' gagne !';
+      const winnerName = (Game.winner===0||Game.winner===1) ? CFG.TEAM_NAMES[Game.winner] : 'Rouge';
+      $('winnerText').textContent = winnerName+' gagne !';
       $('finalScore').textContent = Game.scores[0]+' - '+Game.scores[1];
       const mmrEl = $('mmrChange');
       if (mmrEl) {

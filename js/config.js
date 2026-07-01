@@ -51,9 +51,9 @@ const CFG = Object.freeze({
   MMR_WIN: 25, MMR_LOSS: 15,
 
   // Replay
-  REPLAY_BUFFER_SIZE: 360,
-  REPLAY_BEFORE: 360,
-  REPLAY_SLOW_FRAMES: 60,
+  REPLAY_BUFFER_SIZE: 180,
+  REPLAY_BEFORE: 180,
+  REPLAY_SLOW_FRAMES: 30,
 
   // Input
   UP: ['ArrowUp', 'KeyW'], DOWN: ['ArrowDown', 'KeyS'],
