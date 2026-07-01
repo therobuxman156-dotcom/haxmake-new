@@ -73,6 +73,18 @@ const CFG = Object.freeze({
   // Performance
   MIN_PERF_FPS: 25,
 
+  // Firebase configuration
+  // ⚠️ These keys are public by design (client-side app).
+  // Protection is enforced via Firebase: authorized domains + API key HTTP referrer restrictions.
+  FIREBASE: {
+    apiKey: "AIzaSyCLWPtjCq8aVPCAXBHWBcCMc6jWubG4lws",
+    authDomain: "haxmake.firebaseapp.com",
+    projectId: "haxmake",
+    storageBucket: "haxmake.firebasestorage.app",
+    messagingSenderId: "590360371220",
+    appId: "1:590360371220:web:e3346a6f3534bbcc728701"
+  },
+
   // Countries
   COUNTRIES: [
     { code:'FR', flag:'🇫🇷', name:'France' },
