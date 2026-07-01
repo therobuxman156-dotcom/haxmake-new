@@ -223,7 +223,7 @@ const Main = (() => {
         selectedSpeed=speed||'normal';
         beginGame(playerList, CFG.SPEED_PRESETS[selectedSpeed]?.mult||1);
       };
-      Net.onWinByDisconnect=(w)=>{ Game.winner=w; Game.running=false; onGameOver(); };
+      Net.onWinByDisconnect=(w)=>{ Game.stopReplay(); Game.winner=w; Game.running=false; onGameOver(); };
       Net.onReplay=(frames)=>{ playReplay(frames); };
       Net.onAllReplayDone=()=>{ onGameOver(); };
     } catch(e) { $('joinStatus').textContent=e.message; $('joinStatus').className='error'; }
@@ -264,13 +264,22 @@ const Main = (() => {
   function beginGame(list, mult) {
     phase='playing'; winnerShown=false; showScreen('gameScreen');
     Game.startGame(list, Net.role==='host', mult);
+    if (Net.role === 'host') {
+      Net.onWinByDisconnect = (w) => { Game.stopReplay(); Game.winner = w; Game.running = false; onGameOver(); };
+    }
     Game.setOnReplayEnd(() => {
       const banner = $('replayBanner');
       if (banner) banner.style.display='none';
       if (lastReplayTimer) { clearTimeout(lastReplayTimer); lastReplayTimer = null; }
-      if (Net.role === 'host') Net.markMyReplayDone();
-      else if (Net.role === 'client') Net.sendReplayDone();
-      else { /* solo: nothing to do */ }
+      if (Net.role === 'host') {
+        Net.markMyReplayDone();
+        // If the game is truly over (score limit reached), trigger game over for host too
+        if (Game.isGameOver() && !winnerShown) onGameOver();
+      } else if (Net.role === 'client') {
+        Net.sendReplayDone();
+        // Client also checks if game is over locally
+        if (Game.isGameOver() && !winnerShown) onGameOver();
+      } else { /* solo: nothing to do */ }
     });
     if (Net.role!=='host') Net.onGameState=(s)=>Game.applyServerState(s);
   }
@@ -305,9 +314,9 @@ const Main = (() => {
     if (winnerShown) return;
     winnerShown = true;
 
-    // Validate winner
-    if (Game.winner < 0 || Game.winner > 1) {
-      Game.winner = CFG.TEAM_RED; // fallback
+    // Validate winner — robust against undefined/null/out-of-range
+    if (Game.winner === undefined || Game.winner === null || Game.winner < 0 || Game.winner > 1) {
+      Game.winner = CFG.TEAM_RED; // fallback to red
     }
 
     const myTeam = (() => {

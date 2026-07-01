@@ -65,22 +65,32 @@ const Net = (() => {
 
     const leaver = lobbyPlayers.find(p => p.id === conn.peer);
     const leaverTeam = leaver ? leaver.team : undefined;
-    const wasInGame = inGame && Game && Game.running;
+    // Only trigger forfeit if a real game is running AND no replay is active
+    const wasInLiveGame = inGame && Game && Game.running && !Game.replayActive;
 
     lobbyPlayers = lobbyPlayers.filter(p => p.id !== conn.peer);
     connections = connections.filter(c => c !== conn);
     if (onPlayerLeft) onPlayerLeft(conn.peer);
 
-    // Immediate forfeit win during a game
-    if (wasInGame && leaverTeam !== undefined) {
+    // Immediate forfeit win during a live game (not replay)
+    if (wasInLiveGame && leaverTeam !== undefined) {
       const winnerTeam = leaverTeam === CFG.TEAM_RED ? CFG.TEAM_BLUE : CFG.TEAM_RED;
       Game.winner = winnerTeam;
       Game.running = false;
+      Game.stopReplay(); // Stop any ongoing replay
       inGame = false;
       // Notify remaining clients
       for (const c of connections) try { c.send({type:'winByDisconnect', winner: winnerTeam}); } catch(e) {}
       // Notify host itself
       if (onWinByDisconnect) onWinByDisconnect(winnerTeam);
+    } else if (wasInLiveGame && leaverTeam === undefined) {
+      // Leaver not found in lobbyPlayers — fallback: host (RED) wins
+      Game.winner = CFG.TEAM_RED;
+      Game.running = false;
+      Game.stopReplay();
+      inGame = false;
+      for (const c of connections) try { c.send({type:'winByDisconnect', winner: CFG.TEAM_RED}); } catch(e) {}
+      if (onWinByDisconnect) onWinByDisconnect(CFG.TEAM_RED);
     } else {
       broadcastLobbyState();
     }
