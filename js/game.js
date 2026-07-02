@@ -24,6 +24,16 @@ const Game = (() => {
   let replayOnEnd = null;
   let replayEnded = false;
 
+// ── Client-side prediction & interpolation buffer ──
+	  const STATE_BUF_SIZE = 2;     // only need 2 states for correction
+	  let stateBuffer = [];         // [{time, players:{id:{x,y,vx,vy}}, ball:{x,y,vx,vy}}, ...]
+	  let lastServerTime = 0;
+	  let renderDelay = 16;        // ms behind — small since we predict locally
+	  const CORRECTION_LERP = 0.20; // soft snap toward server pos
+	  const BALL_CORRECTION_LERP = 0.15; // ball correction is even softer
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
   function init(c) { canvas = c; ctx = c.getContext('2d'); canvas.width = CFG.WIDTH + CFG.GOAL_DEPTH*2; canvas.height = CFG.HEIGHT; }
   function setSpeed(m) { speedMult = m; }
 
@@ -49,6 +59,7 @@ const Game = (() => {
     ball = makeBall();
     scores=[0,0]; kickoffTimer=CFG.KICKOFF_DELAY; goalScored=-1; goalAnimTimer=0; running=true;
     replayBuffer=[]; replayFrames=[]; replayActive=false; replayEnded=false;
+    stateBuffer=[]; lastServerTime=0;
   }
   function stop() { running=false; }
 
@@ -131,23 +142,72 @@ const Game = (() => {
       replayActive = false;
       if (!replayEnded && replayOnEnd) { replayEnded = true; const cb = replayOnEnd; replayOnEnd = null; cb(); }
     }
+    // Convert compact state to drawFromState format
+    if (frame && frame.p) {
+      return {
+        players: players.map((p, i) => ({
+          id: p.id, team: p.team, name: p.name, country: p.country,
+          x: frame.p[i] ? frame.p[i][0] : p.x,
+          y: frame.p[i] ? frame.p[i][1] : p.y,
+          rx: frame.p[i] ? frame.p[i][0] : p.x,
+          ry: frame.p[i] ? frame.p[i][1] : p.y,
+        })),
+        ball: {
+          x: frame.b ? frame.b[0] : ball.x,
+          y: frame.b ? frame.b[1] : ball.y,
+          rx: frame.b ? frame.b[0] : ball.x,
+          ry: frame.b ? frame.b[1] : ball.y,
+        },
+        scores: frame.s || scores,
+      };
+    }
     return frame;
   }
 
   function getState() {
     return {
-      players: players.map(p=>({id:p.id,x:p.x,y:p.y,vx:p.vx,vy:p.vy,team:p.team,name:p.name,country:p.country,slotIndex:p.slotIndex})),
-      ball:{x:ball.x,y:ball.y,vx:ball.vx,vy:ball.vy},
-      scores:[...scores], kickoffTimer, goalScored, goalAnimTimer, running, winner,
+      p: players.map(p=>[p.x, p.y, p.vx, p.vy]),  // compact: [x,y,vx,vy] per player
+      b: [ball.x, ball.y, ball.vx, ball.vy],         // compact ball
+      s: scores, kickoffTimer, goalScored, goalAnimTimer, running, winner,
     };
   }
 
-  function applyServerState(s) {
-    if (!s || !s.players) return;
-    scores=[...s.scores]; running=s.running; goalScored=s.goalScored; goalAnimTimer=s.goalAnimTimer; kickoffTimer=s.kickoffTimer; winner=s.winner;
-    for (const sp of s.players) { const p=players.find(pp=>pp.id===sp.id); if (p){p.name=sp.name;p.country=sp.country||p.country;p.x=sp.x;p.y=sp.y;p.vx=sp.vx;p.vy=sp.vy;p.rx=sp.x;p.ry=sp.y;} }
-    if (s.ball) { ball.x=s.ball.x; ball.y=s.ball.y; ball.vx=s.ball.vx; ball.vy=s.ball.vy; ball.rx=ball.x; ball.ry=ball.y; }
-  }
+function applyServerState(s) {
+	    if (!s) return;
+	    const now = performance.now();
+	    scores = s.s ? [...s.s] : scores; running = s.running; goalScored = s.goalScored;
+	    goalAnimTimer = s.goalAnimTimer; kickoffTimer = s.kickoffTimer; winner = s.winner;
+
+	    if (s.p) {
+	      const playerMap = {};
+	      for (let i = 0; i < s.p.length && i < players.length; i++) {
+	        const arr = s.p[i];
+	        playerMap[players[i].id] = { x: arr[0], y: arr[1], vx: arr[2], vy: arr[3] };
+	      }
+	      const ballData = s.b ? { x: s.b[0], y: s.b[1], vx: s.b[2], vy: s.b[3] } : null;
+
+	      // Push into buffer for client correction
+	      if (!isHost) {
+	        stateBuffer.push({ time: now, players: playerMap, ball: ballData });
+	        if (stateBuffer.length > STATE_BUF_SIZE) stateBuffer.shift();
+	        lastServerTime = now;
+	        // Seed local simulation with server velocities for remote players
+	        for (const id in playerMap) {
+	          if (id === myId) continue;
+	          const p = players.find(pp => pp.id === id);
+	          if (p) { p.vx = playerMap[id].vx; p.vy = playerMap[id].vy; }
+	        }
+	        if (ballData) { ball.vx = ballData.vx; ball.vy = ballData.vy; }
+	      } else {
+	        // Host: direct snap
+	        for (const id in playerMap) {
+	          const p = players.find(pp => pp.id === id);
+	          if (p) { p.x = playerMap[id].x; p.y = playerMap[id].y; p.vx = playerMap[id].vx; p.vy = playerMap[id].vy; p.rx = p.x; p.ry = p.y; }
+	        }
+	        if (ballData) { ball.x = ballData.x; ball.y = ballData.y; ball.vx = ballData.vx; ball.vy = ballData.vy; ball.rx = ball.x; ball.ry = ball.y; }
+	      }
+	    }
+	  }
 
   function extrapolateLocalPlayer(input) {
     if (!running||!myId) return;
@@ -159,10 +219,128 @@ const Game = (() => {
     const f=1-(1-CFG.PLAYER_FRICTION)*Math.min(sm,2);
     me.vx*=f; me.vy*=f; me.x+=me.vx; me.y+=me.vy;
     Physics.wallBouncePlayer(me);
-    me.rx=me.x; me.ry=me.y;
-  }
 
-  function isGameOver() { return winner>=0; }
+    // Soft correction toward last known server position (avoids jitter)
+    if (!isHost && stateBuffer.length > 0) {
+      const latest = stateBuffer[stateBuffer.length - 1];
+      const sv = latest.players[me.id];
+      if (sv) {
+        const dx = sv.x - me.x, dy = sv.y - me.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        // Only correct if divergence is significant (>2px) to avoid fighting normal extrapolation
+        if (dist > 2) {
+          me.x = lerp(me.x, sv.x, CORRECTION_LERP);
+          me.y = lerp(me.y, sv.y, CORRECTION_LERP);
+        }
+      }
+    }
+
+me.rx=me.x; me.ry=me.y;
+	  }
+
+	  // ── Client-side prediction: run full physics locally ──
+	  function clientSimulate(input) {
+	    if (!running || !myId || isHost) return;
+	    const me = players.find(p => p.id === myId);
+	    if (!me) return;
+	    const sm = speedMult;
+
+	    // 1. Apply my input to my player (same as extrapolate did)
+	    const spd = (input.k ? CFG.PLAYER_KICK_SPEED : CFG.PLAYER_SPEED) * sm;
+	    if (input.u) me.vy -= spd; if (input.d) me.vy += spd;
+	    if (input.l) me.vx -= spd; if (input.r) me.vx += spd;
+	    const f = 1 - (1 - CFG.PLAYER_FRICTION) * Math.min(sm, 2);
+	    me.vx *= f; me.vy *= f; me.x += me.vx; me.y += me.vy;
+	    Physics.wallBouncePlayer(me);
+
+	    // 2. Advance remote players using their last-known velocity (drift prediction)
+	    for (const p of players) {
+	      if (p.id === myId) continue;
+	      // Use last server velocity if we have it, else zero
+	      if (stateBuffer.length > 0) {
+	        const latest = stateBuffer[stateBuffer.length - 1];
+	        const sv = latest.players[p.id];
+	        if (sv) {
+	          // Predict: apply velocity with friction
+	          p.vx = sv.vx * f; p.vy = sv.vy * f;
+	          p.x = sv.x + p.vx; p.y = sv.y + p.vy;
+	          Physics.wallBouncePlayer(p);
+	        }
+	      }
+	    }
+
+	    // 3. Simulate ball physics locally
+	    ball.vx *= CFG.BALL_FRICTION; ball.vy *= CFG.BALL_FRICTION;
+	    ball.x += ball.vx; ball.y += ball.vy;
+	    Physics.wallBounceBall(ball);
+
+	    // 4. Resolve collisions (player-ball, player-player)
+	    for (const p of players) Physics.resolvePlayerBall(p, ball, p.input.k);
+	    for (let i = 0; i < players.length; i++)
+	      for (let j = i + 1; j < players.length; j++)
+	        Physics.resolvePlayerPlayer(players[i], players[j]);
+
+	    // 5. Soft correction toward server state for ALL entities
+	    if (stateBuffer.length > 0) {
+	      const latest = stateBuffer[stateBuffer.length - 1];
+	      clientCorrectFromServer(latest, myId);
+	    }
+
+	    // Store render positions
+	    for (const p of players) { p.rx = p.x; p.ry = p.y; }
+	    ball.rx = ball.x; ball.ry = ball.y;
+	  }
+
+	  // Softly nudge local prediction toward server authority
+	  function clientCorrectFromServer(sv, localMyId) {
+	    // Correct ball
+	    if (sv.ball) {
+	      const dx = sv.ball.x - ball.x, dy = sv.ball.y - ball.y;
+	      const dist = Math.sqrt(dx * dx + dy * dy);
+	      if (dist > 3) {
+	        ball.x = lerp(ball.x, sv.ball.x, BALL_CORRECTION_LERP);
+	        ball.y = lerp(ball.y, sv.ball.y, BALL_CORRECTION_LERP);
+	        ball.vx = lerp(ball.vx, sv.ball.vx, BALL_CORRECTION_LERP);
+	        ball.vy = lerp(ball.vy, sv.ball.vy, BALL_CORRECTION_LERP);
+	      }
+	    }
+	    // Correct remote players
+	    for (const p of players) {
+	      if (p.id === localMyId) continue;
+	      const sp = sv.players[p.id];
+	      if (!sp) continue;
+	      const dx = sp.x - p.x, dy = sp.y - p.y;
+	      const dist = Math.sqrt(dx * dx + dy * dy);
+	      if (dist > 2) {
+	        p.x = lerp(p.x, sp.x, CORRECTION_LERP);
+	        p.y = lerp(p.y, sp.y, CORRECTION_LERP);
+	      }
+	    }
+	    // Correct myself (soft)
+	    const sme = sv.players[localMyId];
+	    if (sme) {
+	      const me2 = players.find(p => p.id === localMyId);
+	      if (me2) {
+	        const dx = sme.x - me2.x, dy = sme.y - me2.y;
+	        const dist = Math.sqrt(dx * dx + dy * dy);
+	        if (dist > 3) {
+	          me2.x = lerp(me2.x, sme.x, CORRECTION_LERP * 0.5);
+	          me2.y = lerp(me2.y, sme.y, CORRECTION_LERP * 0.5);
+	        }
+	      }
+	    }
+	  }
+
+	  function isGameOver() { return winner>=0; }
+
+// ── Render frame: use local prediction directly (server buffer is for correction only) ──
+	  function getInterpolatedFrame() {
+	    return {
+	      players: players.map(p => ({ id:p.id, x:p.rx!==undefined?p.rx:p.x, y:p.ry!==undefined?p.ry:p.y, team:p.team, name:p.name, country:p.country })),
+	      ball: { rx:ball.rx!==undefined?ball.rx:ball.x, ry:ball.ry!==undefined?ball.ry:ball.y },
+	      scores
+	    };
+	  }
 
   // Render state (either live or replay frame)
   function drawFromState(s) {
@@ -204,7 +382,8 @@ const Game = (() => {
   }
 
   function draw() {
-    drawFromState({ players, ball, scores });
+    const frame = getInterpolatedFrame();
+    drawFromState(frame);
     if (goalAnimTimer>0) {
       const ox=CFG.GOAL_DEPTH;
       ctx.fillStyle=`rgba(255,255,255,${goalAnimTimer/90*0.5})`;
@@ -226,8 +405,8 @@ const Game = (() => {
 
   function drawReplay() { drawFromState(getReplayData()); }
 
-  return {
-    init, setSpeed, startGame, stop, simulate, extrapolateLocalPlayer, applyServerState, getState, draw, drawReplay, startReplay, stopReplay, setOnReplayEnd,
+return {
+	    init, setSpeed, startGame, stop, simulate, clientSimulate, extrapolateLocalPlayer, applyServerState, getState, draw, drawReplay, startReplay, stopReplay, setOnReplayEnd,
     get replayActive(){return replayActive;},
     isGameOver,
     get players(){return players;}, get ball(){return ball;}, get running(){return running;}, get scores(){return scores;}, get winner(){return winner;},

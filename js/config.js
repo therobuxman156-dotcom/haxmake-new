@@ -31,7 +31,7 @@ const CFG = Object.freeze({
   BALL_COLOR: '#f1c40f', FIELD_COLOR: '#2d8a4e', LINE_COLOR: '#ffffff', BG_COLOR: '#1a1a2e',
 
   // Network
-  SEND_RATE: 33, PEER_PREFIX: 'haxmake-',
+  SEND_RATE: 12, INPUT_RATE: 12, PEER_PREFIX: 'haxmake-',
   LOBBY_PREFIX: 'haxlobby-', BROWSE_TIMEOUT: 4000,
 
   // Ranks

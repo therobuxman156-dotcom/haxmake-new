@@ -399,10 +399,10 @@ const Main = (() => {
       Net.collectInputs();
       Game.simulate();
       Net.broadcastGameState();
-    } else {
-      Net.sendInput(input);
-      Game.extrapolateLocalPlayer(input);
-    }
+} else {
+	      Net.sendInput(input);
+	      Game.clientSimulate(input);
+	    }
 
     Game.draw();
 
