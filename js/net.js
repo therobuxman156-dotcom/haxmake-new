@@ -15,6 +15,7 @@ const Net = (() => {
 
   let onPlayerJoined=null, onPlayerLeft=null, onRoomState=null, onGameStart=null, onGameState=null, onWinByDisconnect=null, onReplay=null, onAllReplayDone=null;
   let replayChunks = []; // buffer for incoming replay chunks from host
+  let lastInputTime = 0; // throttle client input sends
 
   const iceConfig = { iceServers: [{ urls:'stun:stun.l.google.com:19302' }, { urls:'stun:stun1.l.google.com:19302' }] };
 
@@ -230,7 +231,12 @@ const Net = (() => {
     });
   }
 
-  function sendInput(input) { if (hostConn&&hostConn.open) hostConn.send({type:'input',input}); }
+  function sendInput(input) {
+    const now = performance.now();
+    if (now - lastInputTime < CFG.INPUT_RATE) return;
+    lastInputTime = now;
+    if (hostConn&&hostConn.open) hostConn.send({type:'input',input});
+  }
   function sendQuit() { if (hostConn&&hostConn.open) hostConn.send({type:'manualQuit'}); }
   function sendReplayDone() { if (hostConn&&hostConn.open) hostConn.send({type:'replayDone'}); }
 
